@@ -105,7 +105,19 @@
   }
 
   // ───── Export XLSX (full workbook) ─────
-  function exportXLSX(db) {
+  async function exportXLSX(db) {
+    // In admin mode, export from server so the file reflects the true DB state
+    if (window.Auth && window.Auth.isLoggedIn && window.Auth.isLoggedIn()) {
+      try {
+        const r = await fetch("/api/admin/export-xlsx", { credentials: "include" });
+        if (r.ok) {
+          const buf = await r.arrayBuffer();
+          download(`ooh-pricing-${stamp()}.xlsx`, new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+          return;
+        }
+      } catch {}
+      // Fall through to client-side export on error
+    }
     if (!window.XLSX) { alert("Module Excel non chargé — réessayez dans un instant."); return; }
     const wb = XLSX.utils.book_new();
     const papersFlat = db.papers.map((p) => ({ ...p, formats: Array.isArray(p.formats) ? p.formats.join(",") : "" }));

@@ -1,17 +1,20 @@
-// Quote request modal — composes a mailto: link with full quote breakdown so
-// the user's mail client opens pre-filled. No real backend needed for a
-// prototype, no data ever leaves the browser via this app.
+// Quote request modal — POSTs to /api/public/quote-requests.
+// Server recomputes pricing before saving; never trusts client totals.
 
 function QuoteModal({ open, onClose, result, lang, onSent, db }) {
   const t = useT(lang);
   const [form, setForm] = useState({ company: "", name: "", email: "", phone: "", message: "" });
-  const [stage, setStage] = useState("form"); // form | preview | sent
+  const [stage, setStage] = useState("form"); // form | sending | sent | error
   const [consent, setConsent] = useState(false);
+  const [reference, setReference] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
     if (open) {
       setStage("form");
       setConsent(false);
+      setErrorMsg("");
+      setReference("");
       setForm({ company: "", name: "", email: "", phone: "", message: "" });
     }
   }, [open]);
@@ -25,95 +28,78 @@ function QuoteModal({ open, onClose, result, lang, onSent, db }) {
     </Modal>
   );
 
-  const { fmt, paper, qty, subj, subjectFee, unit, totalHT, totalTTC, unitEffective,
-          discountPct, expressPct, discountAmount, expressAmount, vat } = result;
-
-  const subject = `Demande de devis OOH — ${fmt.code} × ${qty} ex.`;
-
-  const body = [
-    `Bonjour,`,
-    ``,
-    `Je souhaite recevoir un devis pour la commande suivante :`,
-    ``,
-    `─ COMMANDE ──────────────────────────────`,
-    `Format       : ${fmt.code} — ${lang === "fr" ? fmt.name_fr : fmt.name_en}`,
-    `Dimensions   : ${fmt.width_cm} × ${fmt.height_cm} cm`,
-    `Papier       : ${paper ? (lang === "fr" ? paper.name_fr : paper.name_en) : "—"}`,
-    `Quantité     : ${qty} exemplaires`,
-    `Sujets       : ${subj} visuel${subj > 1 ? "s" : ""} différent${subj > 1 ? "s" : ""}`,
-    `Délai        : ${expressPct > 0 ? "Express (48 h)" : "Standard (5 jours)"}`,
-    ``,
-    `─ DEVIS INDICATIF (calculateur en ligne) ─`,
-    `Prix unitaire     : ${Pricing.fmtCHF(unit)} / ex.`,
-    `Sous-total        : ${Pricing.fmtCHF(unit * qty)}`,
-    discountPct > 0 ? `Remise volume     : − ${Pricing.fmtCHF(discountAmount)} (${(discountPct*100).toFixed(0)} %)` : null,
-    `Traitement fichiers (${subj} sujet${subj > 1 ? "s" : ""}) : + ${Pricing.fmtCHF(subjectFee)}`,
-    expressPct > 0 ? `Majoration express : + ${Pricing.fmtCHF(expressAmount)} (${(expressPct*100).toFixed(0)} %)` : null,
-    `Total HT          : ${Pricing.fmtCHF(totalHT)}`,
-    `TVA 8,1 %         : ${Pricing.fmtCHF(vat)}`,
-    `TOTAL TTC         : ${Pricing.fmtCHF(totalTTC)}`,
-    ``,
-    `─ CONTACT ───────────────────────────────`,
-    `Entreprise   : ${form.company}`,
-    `Nom          : ${form.name}`,
-    `Email        : ${form.email}`,
-    form.phone ? `Téléphone    : ${form.phone}` : null,
-    ``,
-    form.message ? `─ MESSAGE ───────────────────────────────\n${form.message}\n` : null,
-    `Merci de me confirmer ce devis et de m'indiquer la procédure pour l'envoi du visuel.`,
-    ``,
-    `Cordialement,`,
-    form.name,
-  ].filter(Boolean).join("\n");
+  const { fmt, paper, qty, subj, express, totalHT, totalTTC } = result;
 
   const contactEmail = (db && db.contact_email) || CONFIG.contact_email;
 
-  const mailto = `mailto:${encodeURIComponent(contactEmail)}`
-    + `?subject=${encodeURIComponent(subject)}`
-    + `&body=${encodeURIComponent(body)}`;
-
-  const copyToClipboard = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!consent) return;
+    setStage("sending");
+    setErrorMsg("");
     try {
-      await navigator.clipboard.writeText(`${subject}\n\n${body}`);
-      onSent && onSent("📋 Récapitulatif copié dans le presse-papier.");
+      const r = await fetch("/api/public/quote-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          formatCode: fmt.code,
+          paperId: paper ? paper.id : null,
+          quantity: qty,
+          subjects: subj,
+          express: !!express,
+          company: form.company,
+          contactName: form.name,
+          email: form.email,
+          phone: form.phone || null,
+          message: form.message || null,
+          consent: true,
+          lang: lang || "fr",
+        }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        setReference(data.reference || "");
+        setStage("sent");
+        onSent && onSent(lang === "en" ? "Quote request sent!" : "Demande de devis envoyée !");
+      } else {
+        let msg = lang === "en" ? "Submission failed. Please try again." : "Envoi échoué. Veuillez réessayer.";
+        try {
+          const err = await r.json();
+          if (err?.error?.message) msg = err.error.message;
+        } catch {}
+        setErrorMsg(msg);
+        setStage("error");
+      }
     } catch {
-      onSent && onSent("Impossible de copier — sélectionnez le texte manuellement.");
+      setErrorMsg(lang === "en" ? "Network error. Please check your connection." : "Erreur réseau. Vérifiez votre connexion.");
+      setStage("error");
     }
   };
 
-  const goPreview = (e) => {
-    e.preventDefault();
-    if (!consent) return;
-    setStage("preview");
-  };
-
-  const goSend = () => {
-    window.location.href = mailto;
-    setStage("sent");
-    onSent && onSent(t("sent_ok"));
-  };
-
   return (
-    <Modal open={open} onClose={onClose} width={640}>
-      {stage === "form" && (
-        <form onSubmit={goPreview}>
+    <Modal open={open} onClose={onClose} width={600}>
+      {(stage === "form" || stage === "error") && (
+        <form onSubmit={handleSubmit}>
           <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "flex-start", gap: 16 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.01em" }}>{t("quote_title")}</div>
               <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                {t("quote_sub")} La demande s'ouvre dans votre client mail à destination de <code className="kbd">{contactEmail}</code>.
+                {lang === "en"
+                  ? "We will get back to you within one business day."
+                  : "Nous vous répondons dans un délai d'un jour ouvrable."}
               </div>
             </div>
             <button type="button" className="btn btn-ghost btn-icon" onClick={onClose}>✕</button>
           </div>
 
-          <div style={{ padding: 20, background: "var(--surface-2)", borderBottom: "1px solid var(--line)" }}>
+          <div style={{ padding: 16, background: "var(--surface-2)", borderBottom: "1px solid var(--line)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <FormatThumb fmt={fmt} size={56} showLabel={false} />
+              <FormatThumb fmt={fmt} size={52} showLabel={false} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700 }}>{fmt.code} · {lang === "fr" ? fmt.name_fr : fmt.name_en}</div>
                 <div className="muted" style={{ fontSize: 12 }}>
                   {qty} ex. · {subj} sujet{subj > 1 ? "s" : ""} · {paper ? (lang === "fr" ? paper.name_fr : paper.name_en) : "—"}
+                  {express ? <span style={{ marginLeft: 6, color: "var(--accent)" }}>· Express 48 h</span> : null}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
@@ -122,6 +108,12 @@ function QuoteModal({ open, onClose, result, lang, onSent, db }) {
               </div>
             </div>
           </div>
+
+          {stage === "error" && (
+            <div style={{ padding: "10px 24px", background: "var(--err-bg, #fff1f0)", color: "var(--err, #c0392b)", fontSize: 13, borderBottom: "1px solid var(--line)" }}>
+              {errorMsg}
+            </div>
+          )}
 
           <div className="form-2col" style={{ padding: 24 }}>
             <div className="field" style={{ gridColumn: "1 / -1" }}>
@@ -148,59 +140,52 @@ function QuoteModal({ open, onClose, result, lang, onSent, db }) {
             <label style={{ gridColumn: "1 / -1", display: "flex", alignItems: "flex-start", gap: 8, fontSize: 11, color: "var(--ink-3)", lineHeight: 1.5, cursor: "pointer" }}>
               <input type="checkbox" required checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ marginTop: 3 }} />
               <span>
-                J'accepte que mes coordonnées soient transmises à <strong>{CONFIG.company_name}</strong> par
-                email pour le traitement de cette demande de devis. Conservation max {CONFIG.retention_months} mois.
-                Détails dans la <a href="#privacy" onClick={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent("open-legal", { detail: "privacy" })); }}>politique de confidentialité</a>. *
+                {lang === "en"
+                  ? <>I agree that my contact details be shared with <strong>{CONFIG.company_name}</strong> to process this quote request. Stored for max {CONFIG.retention_months} months. See our <a href="#privacy" onClick={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent("open-legal", { detail: "privacy" })); }}>privacy policy</a>. *</>
+                  : <>J'accepte que mes coordonnées soient transmises à <strong>{CONFIG.company_name}</strong> pour le traitement de cette demande de devis. Conservation max {CONFIG.retention_months} mois. Voir la <a href="#privacy" onClick={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent("open-legal", { detail: "privacy" })); }}>politique de confidentialité</a>. *</>
+                }
               </span>
             </label>
           </div>
 
           <div style={{ padding: "14px 20px", borderTop: "1px solid var(--line)", display: "flex", gap: 10, alignItems: "center" }}>
-            <span className="muted" style={{ fontSize: 11 }}>* champs obligatoires</span>
+            <span className="muted" style={{ fontSize: 11 }}>* {lang === "en" ? "required fields" : "champs obligatoires"}</span>
             <div className="spacer" />
             <button type="button" className="btn" onClick={onClose}>{t("cancel")}</button>
-            <button type="submit" disabled={!consent} className="btn btn-primary">Aperçu & envoi →</button>
+            <button type="submit" disabled={!consent} className="btn btn-primary">
+              {lang === "en" ? "Send request →" : "Envoyer la demande →"}
+            </button>
           </div>
         </form>
       )}
 
-      {stage === "preview" && (
-        <div>
-          <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--line)" }}>
-            <div style={{ fontSize: 17, fontWeight: 700 }}>Aperçu de l'email</div>
-            <div className="muted" style={{ fontSize: 12 }}>Voici ce qui sera envoyé à {contactEmail}. Vous pouvez ajuster avant l'envoi dans votre client mail.</div>
-          </div>
-          <div style={{ padding: 24, fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.6, background: "var(--surface-2)", borderBottom: "1px solid var(--line)", maxHeight: 360, overflow: "auto", whiteSpace: "pre-wrap" }}>
-            <div style={{ marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid var(--line)" }}>
-              <div><strong>À :</strong> {contactEmail}</div>
-              <div><strong>Objet :</strong> {subject}</div>
-            </div>
-            {body}
-          </div>
-          <div style={{ padding: "14px 20px", borderTop: "1px solid var(--line)", display: "flex", gap: 10, alignItems: "center" }}>
-            <button type="button" className="btn" onClick={() => setStage("form")}>← Modifier</button>
-            <div className="spacer" />
-            <button type="button" className="btn" onClick={copyToClipboard}>📋 Copier</button>
-            <button type="button" className="btn btn-primary" onClick={goSend}>✉ Ouvrir mon client mail</button>
-          </div>
+      {stage === "sending" && (
+        <div style={{ padding: 48, textAlign: "center" }}>
+          <div className="spinner" style={{ width: 36, height: 36, margin: "0 auto 16px", border: "3px solid var(--line)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+          <div className="muted">{lang === "en" ? "Sending your request…" : "Envoi en cours…"}</div>
         </div>
       )}
 
       {stage === "sent" && (
-        <div style={{ padding: 36, textAlign: "center" }}>
+        <div style={{ padding: 40, textAlign: "center" }}>
           <div style={{ width: 60, height: 60, margin: "0 auto 16px", borderRadius: 100, background: "var(--ok-bg)", color: "var(--ok)", display: "grid", placeItems: "center", fontSize: 28, fontWeight: 700 }}>✓</div>
-          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Votre client mail s'est ouvert</div>
-          <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-            Vérifiez que l'email s'est bien ouvert dans votre messagerie, puis envoyez-le.
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>
+            {lang === "en" ? "Request sent!" : "Demande envoyée !"}
           </div>
-          <div className="muted-2" style={{ fontSize: 12, marginBottom: 20 }}>
-            Si rien ne s'est passé, copiez le récapitulatif et écrivez-nous manuellement à<br/>
-            <a href={`mailto:${contactEmail}`}>{contactEmail}</a>
+          {reference && (
+            <div style={{ margin: "12px auto", display: "inline-block", padding: "6px 14px", background: "var(--surface-2)", borderRadius: 6, fontSize: 14, fontFamily: "var(--font-mono)", letterSpacing: "0.04em", border: "1px solid var(--line)" }}>
+              {lang === "en" ? "Reference:" : "Référence :"} <strong>{reference}</strong>
+            </div>
+          )}
+          <div className="muted" style={{ fontSize: 13, marginTop: 12, marginBottom: 6 }}>
+            {lang === "en"
+              ? <>A confirmation has been sent to <strong>{form.email}</strong>. We will get back to you within one business day at <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</>
+              : <>Une confirmation a été envoyée à <strong>{form.email}</strong>. Nous vous répondrons sous un jour ouvrable à <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</>
+            }
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-            <button className="btn" onClick={() => setStage("preview")}>← Retour à l'aperçu</button>
-            <button className="btn btn-primary" onClick={onClose}>Fermer</button>
-          </div>
+          <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={onClose}>
+            {lang === "en" ? "Close" : "Fermer"}
+          </button>
         </div>
       )}
     </Modal>

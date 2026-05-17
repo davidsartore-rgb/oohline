@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Catalog ───────────────────────────────────────────────────────────────────
+
+model Section {
+  id            String    @id @db.VarChar(50)
+  name_fr       String    @db.VarChar(255)
+  name_en       String    @db.VarChar(255)
+  desc_fr       String?   @db.Text
+  desc_en       String?   @db.Text
+  enabled       Boolean   @default(true)
+  display_order Int       @default(0)
+  formats       Format[]
+  @@map("sections")
+}
+
+model Format {
+  code          String       @id @db.VarChar(20)
+  section_id    String?      @db.VarChar(50)
+  section       Section?     @relation(fields: [section_id], references: [id])
+  name_fr       String       @db.VarChar(255)
+  name_en       String       @db.VarChar(255)
+  desc_fr       String?      @db.Text
+  desc_en       String?      @db.Text
+  width_cm      Decimal      @db.Decimal(7, 2)
+  height_cm     Decimal      @db.Decimal(7, 2)
+  surface_m2    Decimal?     @db.Decimal(8, 4)
+  base_price    Decimal      @db.Decimal(10, 2)
+  display_order Int          @default(0)
+  archived_at   DateTime?
+  formatPapers  FormatPaper[]
+  @@map("formats")
+}
+
+model Paper {
+  id            String       @id @db.VarChar(50)
+  name_fr       String       @db.VarChar(255)
+  name_en       String       @db.VarChar(255)
+  factor        Decimal      @db.Decimal(5, 3) @default(1.000)
+  display_order Int          @default(0)
+  formatPapers  FormatPaper[]
+  @@map("papers")
+}
+
+model FormatPaper {
+  format_code  String @db.VarChar(20)
+  paper_id     String @db.VarChar(50)
+  priority     Int    @default(0)
+  format       Format @relation(fields: [format_code], references: [code], onDelete: Cascade)
+  paper        Paper  @relation(fields: [paper_id], references: [id], onDelete: Cascade)
+  @@id([format_code, paper_id])
+  @@map("format_papers")
+}
+
+model VolumeTier {
+  id            Int     @id @default(autoincrement())
+  from_quantity Int
+  discount_pct  Decimal @db.Decimal(5, 2)
+  @@map("volume_tiers")
+}
+
+model SubjectFee {
+  id      Int     @id @default(autoincrement())
+  count   Int
+  fee_chf Decimal @db.Decimal(10, 2)
+  @@map("subject_fees")
+}
+
+// ── Site configuration ────────────────────────────────────────────────────────
+
+model Setting {
+  key   String @id @db.VarChar(100)
+  value Json
+  @@map("settings")
+}
+
+model PageText {
+  page     String  @id @db.VarChar(50)
+  title_fr String? @db.VarChar(500)
+  title_en String? @db.VarChar(500)
+  sub_fr   String? @db.Text
+  sub_en   String? @db.Text
+  @@map("page_texts")
+}
+
+model LegalPage {
+  id         String  @id @db.VarChar(50)
+  title_fr   String? @db.VarChar(255)
+  title_en   String? @db.VarChar(255)
+  content_fr String? @db.LongText
+  content_en String? @db.LongText
+  @@map("legal_pages")
+}
+
+model HeaderConfig {
+  id          Int     @id @default(1)
+  logo        String? @db.LongText
+  logo_alt    String? @db.VarChar(255)
+  brand_name  String? @db.VarChar(255)
+  brand_tag   String? @db.VarChar(255)
+  show_status Boolean @default(true)
+  show_lang   Boolean @default(true)
+  @@map("header_config")
+}
+
+model FooterConfig {
+  id       Int     @id @default(1)
+  enabled  Boolean @default(true)
+  sections Json
+  @@map("footer_config")
+}
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+model AdminUser {
+  id             Int              @id @default(autoincrement())
+  username       String           @unique @db.VarChar(100)
+  password_hash  String           @db.VarChar(255)
+  totp_secret    String?          @db.VarChar(255)
+  totp_enabled   Boolean          @default(false)
+  backup_codes   Json?
+  recovery_email String?          @db.VarChar(255)
+  created_at     DateTime         @default(now())
+  last_login_at  DateTime?
+  failed_logins  Int              @default(0)
+  locked_until   DateTime?
+  sessions       AdminSession[]
+  recoveryTokens RecoveryToken[]
+  @@map("admin_users")
+}
+
+model AdminSession {
+  id         String    @id @db.VarChar(64)
+  token_hash String    @unique @db.VarChar(64)
+  user_id    Int
+  user       AdminUser @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at DateTime  @default(now())
+  expires_at DateTime
+  ip         String?   @db.VarChar(45)
+  user_agent String?   @db.VarChar(500)
+  @@map("admin_sessions")
+}
+
+model RecoveryToken {
+  id         String    @id @db.VarChar(64)
+  token_hash String    @unique @db.VarChar(64)
+  user_id    Int
+  user       AdminUser @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at DateTime  @default(now())
+  expires_at DateTime
+  used_at    DateTime?
+  @@map("recovery_tokens")
+}
+
+// ── Quotes ────────────────────────────────────────────────────────────────────
+
+model QuoteRequest {
+  id           Int      @id @default(autoincrement())
+  reference    String   @unique @db.VarChar(50)
+  format_code  String   @db.VarChar(20)
+  paper_id     String?  @db.VarChar(50)
+  quantity     Int
+  subjects     Int
+  express      Boolean  @default(false)
+  computed_ht  Decimal  @db.Decimal(10, 2)
+  computed_ttc Decimal  @db.Decimal(10, 2)
+  company      String   @db.VarChar(255)
+  contact_name String   @db.VarChar(255)
+  email        String   @db.VarChar(255)
+  phone        String?  @db.VarChar(50)
+  message      String?  @db.Text
+  consent_at   DateTime
+  consent_ip   String?  @db.VarChar(45)
+  status       String   @default("new") @db.VarChar(20)
+  created_at   DateTime @default(now())
+  expires_at   DateTime
+  lang         String   @default("fr") @db.VarChar(5)
+  @@index([created_at])
+  @@index([status])
+  @@map("quote_requests")
+}
+
+// ── Audit ─────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  at         DateTime @default(now())
+  actor      String   @db.VarChar(100)
+  action     String   @db.VarChar(100)
+  target     String?  @db.VarChar(200)
+  before     Json?
+  after      Json?
+  ip         String?  @db.VarChar(45)
+  user_agent String?  @db.VarChar(500)
+  @@index([at])
+  @@map("audit_log")
+}

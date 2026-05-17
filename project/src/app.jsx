@@ -28,8 +28,18 @@ function App() {
   const [tweaks, setTweaks] = useTweaks(TWEAK_DEFAULTS);
   const [adminAuthed, setAdminAuthed] = useState(() => Auth.isLoggedIn());
   const [legalPage, setLegalPage] = useState(null);
+  // Recovery token in URL hash (e.g. #recover=TOKEN)
+  const [recoveryToken, setRecoveryToken] = useState(() => {
+    const m = location.hash.match(/^#recover=(.+)/);
+    return m ? m[1] : null;
+  });
 
   const t = useT(lang);
+
+  // Load live data from API on mount
+  useEffect(() => {
+    DB.refresh().then(data => { if (data) setDb(data); });
+  }, []);
 
   useEffect(() => {
     const name = (db.header && db.header.brand_name) || t("brand_name");
@@ -146,6 +156,18 @@ function App() {
         db={db}
         onSent={(msg) => showToast(msg || t("sent_ok"))}
       />
+
+      {recoveryToken && (
+        <PasswordResetModal
+          token={recoveryToken}
+          onClose={() => { setRecoveryToken(null); history.replaceState(null, "", location.pathname); }}
+          onSuccess={() => {
+            setRecoveryToken(null);
+            history.replaceState(null, "", location.pathname);
+            showToast("Mot de passe mis à jour — connectez-vous.");
+          }}
+        />
+      )}
 
       <Footer onOpen={(p) => setLegalPage(p)} lang={lang} db={db} />
       <CookiesBanner db={db} />
@@ -439,107 +461,125 @@ function LoginGate({ onLogin, onCancel }) {
 }
 
 function RecoveryModal({ open, onClose, onSuccess }) {
-  const [step, setStep] = useState(0); // 0: code, 1: new creds, 2: done
-  const [code, setCode] = useState("");
-  const [codeErr, setCodeErr] = useState(false);
-  const [u, setU] = useState("");
-  const [p1, setP1] = useState("");
-  const [p2, setP2] = useState("");
-  const [formErr, setFormErr] = useState("");
+  const [step, setStep] = useState(0); // 0: email, 1: sent
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
 
-  useEffect(() => {
-    if (open) {
-      setStep(0); setCode(""); setCodeErr(false);
-      Auth.getUsername().then((name) => setU(name));
-      setP1(""); setP2(""); setFormErr("");
-    }
-  }, [open]);
+  useEffect(() => { if (open) { setStep(0); setEmail(""); setErr(""); } }, [open]);
 
-  const checkCode = (e) => {
+  const sendLink = async (e) => {
     e.preventDefault();
-    if (Auth.verifyRecovery(code)) setStep(1);
-    else setCodeErr(true);
-  };
-  const saveCreds = async (e) => {
-    e.preventDefault();
-    if (!u.trim()) return setFormErr("Identifiant requis.");
-    if (p1.length < 4) return setFormErr("Mot de passe : 4 caractères minimum.");
-    if (p1 !== p2) return setFormErr("Les mots de passe ne correspondent pas.");
-    await Auth.setCreds({ username: u.trim(), password: p1 });
-    setStep(2);
-    setTimeout(() => { onSuccess && onSuccess(); }, 1100);
+    if (!email.trim()) return setErr("Email requis.");
+    setBusy(true);
+    const ok = await Auth.startRecovery(email.trim());
+    setBusy(false);
+    if (ok) setStep(1);
+    else setErr("Impossible d'envoyer l'email. Vérifiez votre adresse.");
   };
 
   return (
-    <Modal open={open} onClose={onClose} width={460}>
+    <Modal open={open} onClose={onClose} width={420}>
       {step === 0 && (
-        <form onSubmit={checkCode}>
+        <form onSubmit={sendLink}>
           <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--line)" }}>
-            <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>Récupération d'accès</div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Saisissez votre code de récupération pour réinitialiser vos identifiants.</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Récupération d'accès</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+              Un lien de réinitialisation sera envoyé à votre adresse de récupération.
+            </div>
           </div>
           <div style={{ padding: 24 }}>
             <div className="field">
-              <div className="field-label">Code de récupération</div>
-              <input autoFocus className="input mono" placeholder="OOH-XXXX-XXXX"
-                value={code} onChange={(e) => { setCode(e.target.value.toUpperCase()); setCodeErr(false); }}
-                style={{ letterSpacing: "0.04em", textTransform: "uppercase" }} />
-              <div className="field-hint">Code communiqué hors-ligne au responsable du compte. Si vous l'avez perdu, contactez l'administrateur système.</div>
+              <div className="field-label">Email de récupération</div>
+              <input autoFocus type="email" className="input" placeholder="admin@votredomaine.ch"
+                value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }} />
+              <div className="field-hint">L'adresse configurée dans Admin → Compte → Email de récupération.</div>
             </div>
-            {codeErr && (
-              <div style={{ padding: "8px 12px", background: "var(--err-bg)", color: "var(--err)", borderRadius: 5, fontSize: 12, marginTop: 12 }}>
-                ⚠ Code invalide.
-              </div>
-            )}
+            {err && <div style={{ padding: "8px 12px", background: "var(--err-bg)", color: "var(--err)", borderRadius: 5, fontSize: 12, marginTop: 12 }}>⚠ {err}</div>}
           </div>
           <div style={{ padding: "14px 20px", borderTop: "1px solid var(--line)", display: "flex", gap: 10 }}>
             <button type="button" className="btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Annuler</button>
-            <button type="submit" className="btn btn-primary" style={{ flex: 1, justifyContent: "center" }}>Vérifier →</button>
+            <button type="submit" disabled={busy} className="btn btn-primary" style={{ flex: 1, justifyContent: "center" }}>
+              {busy ? "Envoi…" : "Envoyer le lien →"}
+            </button>
           </div>
         </form>
       )}
-
       {step === 1 && (
-        <form onSubmit={saveCreds}>
-          <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ width: 26, height: 26, borderRadius: 100, background: "var(--ok-bg)", color: "var(--ok)", display: "grid", placeItems: "center", fontSize: 14 }}>✓</span>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>Nouveaux identifiants</div>
-              <div className="muted" style={{ fontSize: 12 }}>Définissez votre identifiant et votre nouveau mot de passe.</div>
-            </div>
+        <div style={{ padding: 36, textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 14 }}>📧</div>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Lien envoyé !</div>
+          <div className="muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
+            Consultez votre email et cliquez sur le lien de récupération.<br />
+            Valable 24 heures, usage unique.
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 24 }} onClick={onClose}>OK</button>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Password reset modal — triggered by #recover=TOKEN in URL
+function PasswordResetModal({ token, onClose, onSuccess }) {
+  const [u, setU] = useState("");
+  const [p1, setP1] = useState("");
+  const [p2, setP2] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (p1.length < 8) return setErr("Mot de passe : 8 caractères minimum.");
+    if (p1 !== p2) return setErr("Les mots de passe ne correspondent pas.");
+    setBusy(true);
+    try {
+      await Auth.completeRecovery({ token, newPassword: p1, newUsername: u.trim() || undefined });
+      setDone(true);
+      setTimeout(() => onSuccess && onSuccess(), 1500);
+    } catch (e) {
+      setErr(e.message || "Erreur lors de la réinitialisation.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} width={400}>
+      {done ? (
+        <div style={{ padding: 36, textAlign: "center" }}>
+          <div style={{ width: 56, height: 56, margin: "0 auto 14px", borderRadius: 100, background: "var(--ok-bg)", color: "var(--ok)", display: "grid", placeItems: "center", fontSize: 26 }}>✓</div>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>Mot de passe mis à jour</div>
+        </div>
+      ) : (
+        <form onSubmit={submit}>
+          <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--line)" }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Nouveau mot de passe</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Définissez vos nouveaux identifiants.</div>
           </div>
           <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="field">
-              <div className="field-label">Identifiant</div>
-              <input className="input" value={u} onChange={(e) => { setU(e.target.value); setFormErr(""); }} />
+              <div className="field-label">Identifiant (laisser vide pour conserver)</div>
+              <input className="input" value={u} onChange={(e) => { setU(e.target.value); setErr(""); }} />
             </div>
             <div className="field">
               <div className="field-label">Nouveau mot de passe</div>
-              <input type="password" className="input" value={p1} onChange={(e) => { setP1(e.target.value); setFormErr(""); }} />
+              <input type="password" className="input" autoFocus value={p1} onChange={(e) => { setP1(e.target.value); setErr(""); }} />
             </div>
             <div className="field">
               <div className="field-label">Confirmation</div>
-              <input type="password" className="input" value={p2} onChange={(e) => { setP2(e.target.value); setFormErr(""); }} />
+              <input type="password" className="input" value={p2} onChange={(e) => { setP2(e.target.value); setErr(""); }} />
             </div>
-            {formErr && (
-              <div style={{ padding: "8px 12px", background: "var(--err-bg)", color: "var(--err)", borderRadius: 5, fontSize: 12 }}>
-                ⚠ {formErr}
-              </div>
-            )}
+            {err && <div style={{ padding: "8px 12px", background: "var(--err-bg)", color: "var(--err)", borderRadius: 5, fontSize: 12 }}>⚠ {err}</div>}
           </div>
           <div style={{ padding: "14px 20px", borderTop: "1px solid var(--line)", display: "flex", gap: 10 }}>
             <button type="button" className="btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Annuler</button>
-            <button type="submit" className="btn btn-primary" style={{ flex: 1, justifyContent: "center" }}>Enregistrer</button>
+            <button type="submit" disabled={busy} className="btn btn-primary" style={{ flex: 1, justifyContent: "center" }}>
+              {busy ? "Enregistrement…" : "Enregistrer"}
+            </button>
           </div>
         </form>
-      )}
-
-      {step === 2 && (
-        <div style={{ padding: 36, textAlign: "center" }}>
-          <div style={{ width: 56, height: 56, margin: "0 auto 14px", borderRadius: 100, background: "var(--ok-bg)", color: "var(--ok)", display: "grid", placeItems: "center", fontSize: 26, fontWeight: 700 }}>✓</div>
-          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Identifiants mis à jour</div>
-          <div className="muted" style={{ fontSize: 13 }}>Vous pouvez vous connecter avec votre nouveau mot de passe.</div>
-        </div>
       )}
     </Modal>
   );
