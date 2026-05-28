@@ -88,7 +88,6 @@ const FRONTEND = path.join(__dirname, '..', '..', 'project');
 fastify.register(require('@fastify/static'), {
   root: FRONTEND,
   prefix: '/',
-  decorateReply: false,
 });
 
 // ── API routes ────────────────────────────────────────────────────────────────
