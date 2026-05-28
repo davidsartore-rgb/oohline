@@ -72,6 +72,7 @@ function AdminPage({ db, setDb, lang, onSaved }) {
     { id: "tiers", label: t("tab_tiers") },
     { id: "subjects", label: t("tab_subjects") },
     { id: "options", label: t("tab_options") },
+    { id: "shipping", label: "Livraison" },
     { id: "texts", label: "Textes" },
     { id: "legal", label: "Légal" },
     { id: "header", label: "En-tête" },
@@ -129,6 +130,7 @@ function AdminPage({ db, setDb, lang, onSaved }) {
       {tab === "tiers" && <TiersTab db={db} update={update} t={t} />}
       {tab === "subjects" && <SubjectsTab db={db} update={update} t={t} />}
       {tab === "options" && <OptionsTab db={db} update={update} t={t} lang={lang} />}
+      {tab === "shipping" && <ShippingTab db={db} update={update} t={t} lang={lang} />}
       {tab === "texts" && <TextsTab db={db} update={update} />}
       {tab === "legal" && <LegalTab db={db} update={update} />}
       {tab === "header" && <HeaderTab db={db} update={update} />}

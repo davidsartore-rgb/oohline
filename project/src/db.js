@@ -9,6 +9,16 @@ const DEFAULT_DB = {
   sections: [], formats: [], papers: [],
   tiers: [], subjects: [],
   express_surcharge_pct: 22,
+  shipping: {
+    default_chf: 25,
+    overrides: [
+      { id: "s1", label_fr: "Petite quantité (jusqu'à 49 ex.)",  label_en: "Small qty (up to 49)",   from_qty: 1,   formats: [], fee_chf: 25 },
+      { id: "s2", label_fr: "Quantité moyenne (50–99 ex.)",      label_en: "Medium qty (50–99)",     from_qty: 50,  formats: [], fee_chf: 45 },
+      { id: "s3", label_fr: "Grande quantité (100–249 ex.)",     label_en: "Large qty (100–249)",    from_qty: 100, formats: [], fee_chf: 75 },
+      { id: "s4", label_fr: "Très grande quantité (≥ 250 ex.)",  label_en: "Very large qty (≥ 250)", from_qty: 250, formats: [], fee_chf: 120 },
+      { id: "s5", label_fr: "Grands formats (F24, MOOH)",        label_en: "Large formats (F24, MOOH)", from_qty: 1, formats: ["F24", "TB", "F12T"], fee_chf: 55 },
+    ],
+  },
   contact_email: "devis@oohline.ch",
   cookies_banner_enabled: true,
   page_texts: {},

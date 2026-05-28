@@ -13,6 +13,7 @@ function SummaryPanel({ result, t, onOpenQuote, lang }) {
     );
   }
   const { fmt, paper, qty, subj, unit, subjectFee, subtotal, discountAmount, expressAmount,
+          shippingFee, shippingRow,
           totalHT, vat, totalTTC, unitEffective, discountPct, expressPct, tier } = result;
   return (
     <div className="card summary">
@@ -53,6 +54,10 @@ function SummaryPanel({ result, t, onOpenQuote, lang }) {
             <span className="num">+ {Pricing.fmtCHF(expressAmount)}</span>
           </div>
         )}
+        <div className="line">
+          <span>+ {t("shipping_fee")}{shippingRow ? ` (${lang === "fr" ? (shippingRow.label_fr || "barème") : (shippingRow.label_en || "tier")})` : ""}</span>
+          <span className="num">+ {Pricing.fmtCHF(shippingFee)}</span>
+        </div>
         <div className="line tot">
           <span>{t("total_ht")}</span>
           <span className="num">{Pricing.fmtCHF(totalHT)}</span>
@@ -285,6 +290,7 @@ function CalcWizard({ db, t, lang, formats, formatCode, setFormatCode, quantity,
                   <tr><td>{t("discount")}</td><td className="num">− {(result.discountPct*100).toFixed(0)} %</td></tr>
                   <tr><td>{t("subjects_fee")}</td><td className="num">+ {Pricing.fmtCHF(result.subjectFee)}</td></tr>
                   <tr><td>{t("delay")}</td><td className="num">{result.expressPct ? `+ ${(result.expressPct*100).toFixed(0)} %` : "0 %"}</td></tr>
+                  <tr><td>{t("shipping_fee")}</td><td className="num">+ {Pricing.fmtCHF(result.shippingFee)}</td></tr>
                 </tbody>
               </table>
             </div>
@@ -358,6 +364,7 @@ function CalcCompact({ db, t, lang, formats, formatCode, setFormatCode, quantity
                 {result.discountPct > 0 && <tr style={{ color: "var(--ok)" }}><td>{t("discount")}</td><td>palier {result.tier.from}+ ({(result.discountPct*100).toFixed(0)} %)</td><td className="num">− {Pricing.fmtCHF(result.discountAmount)}</td></tr>}
                 <tr style={{ color: "var(--brand-700)" }}><td>{t("subjects_fee")}</td><td>{result.subj} sujet{result.subj > 1 ? "s" : ""}</td><td className="num">+ {Pricing.fmtCHF(result.subjectFee)}</td></tr>
                 {result.expressPct > 0 && <tr style={{ color: "var(--warn)" }}><td>{t("express_fee")}</td><td>+ {(result.expressPct*100).toFixed(0)} %</td><td className="num">+ {Pricing.fmtCHF(result.expressAmount)}</td></tr>}
+                <tr><td>{t("shipping_fee")}</td><td>{result.shippingRow ? (lang === "fr" ? (result.shippingRow.label_fr || "barème") : (result.shippingRow.label_en || "tier")) : (lang === "fr" ? "tarif de base" : "default rate")}</td><td className="num">+ {Pricing.fmtCHF(result.shippingFee)}</td></tr>
                 <tr style={{ background: "var(--surface-2)", fontWeight: 700 }}><td>{t("total_ht")}</td><td></td><td className="num price">{Pricing.fmtCHF(result.totalHT)}</td></tr>
                 <tr><td className="muted">{t("vat")}</td><td></td><td className="num muted">{Pricing.fmtCHF(result.vat)}</td></tr>
                 <tr style={{ background: "var(--brand-50)", fontWeight: 700, color: "var(--brand-800)" }}><td>{t("total_ttc")}</td><td></td><td className="num">{Pricing.fmtCHF(result.totalTTC)}</td></tr>

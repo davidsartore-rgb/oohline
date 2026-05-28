@@ -103,6 +103,16 @@ async function main() {
     { key: 'vat_rate', value: 0.081 },
     { key: 'contact_email', value: process.env.CONTACT_EMAIL || 'devis@oohline.ch' },
     { key: 'cookies_banner_enabled', value: true },
+    { key: 'shipping', value: {
+      default_chf: 25,
+      overrides: [
+        { id: 's1', label_fr: "Petite quantité (jusqu'à 49 ex.)",  label_en: 'Small qty (up to 49)',   from_qty: 1,   formats: [], fee_chf: 25 },
+        { id: 's2', label_fr: 'Quantité moyenne (50–99 ex.)',      label_en: 'Medium qty (50–99)',     from_qty: 50,  formats: [], fee_chf: 45 },
+        { id: 's3', label_fr: 'Grande quantité (100–249 ex.)',     label_en: 'Large qty (100–249)',    from_qty: 100, formats: [], fee_chf: 75 },
+        { id: 's4', label_fr: 'Très grande quantité (≥ 250 ex.)', label_en: 'Very large qty (≥ 250)', from_qty: 250, formats: [], fee_chf: 120 },
+        { id: 's5', label_fr: 'Grands formats (F24, MOOH)',        label_en: 'Large formats (F24, MOOH)', from_qty: 1, formats: ['F24', 'TB', 'F12T'], fee_chf: 55 },
+      ],
+    }},
   ];
   for (const s of defaults) {
     await prisma.setting.upsert({ where: { key: s.key }, update: {}, create: s });

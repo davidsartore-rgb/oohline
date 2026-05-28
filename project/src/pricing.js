@@ -19,6 +19,33 @@ window.Pricing = {
     return direct || db.papers[0];
   },
 
+  // Returns { fee_chf, row | null } — largest matching from_qty override wins;
+  // format-specific overrides beat catch-all ones on tie; falls back to default_chf.
+  shippingFor(db, formatCode, qty) {
+    const ship = db.shipping || {};
+    const def = typeof ship.default_chf === "number" ? ship.default_chf : 25;
+    const overrides = Array.isArray(ship.overrides) ? ship.overrides : [];
+    const q = Math.max(1, parseInt(qty, 10) || 1);
+
+    const matching = overrides.filter((o) => {
+      const fmtOk = !Array.isArray(o.formats) || o.formats.length === 0 || o.formats.includes(formatCode);
+      const qtyOk = (parseInt(o.from_qty, 10) || 1) <= q;
+      return fmtOk && qtyOk;
+    });
+    if (matching.length === 0) return { fee_chf: def, row: null };
+
+    matching.sort((a, b) => {
+      const qa = parseInt(a.from_qty, 10) || 1;
+      const qb = parseInt(b.from_qty, 10) || 1;
+      if (qa !== qb) return qb - qa;
+      const sa = (Array.isArray(a.formats) && a.formats.length > 0) ? 1 : 0;
+      const sb = (Array.isArray(b.formats) && b.formats.length > 0) ? 1 : 0;
+      return sb - sa;
+    });
+    const row = matching[0];
+    return { fee_chf: typeof row.fee_chf === "number" ? row.fee_chf : def, row };
+  },
+
   compute({ db, formatCode, quantity, subjects, express }) {
     const fmt = db.formats.find((f) => f.code === formatCode);
     if (!fmt) return null;
@@ -49,7 +76,12 @@ window.Pricing = {
     const afterDiscount = subtotal - discountAmount;
     const beforeExpress = afterDiscount + subjectFee;
     const expressAmount = beforeExpress * expressPct;
-    const totalHT = beforeExpress + expressAmount;
+
+    const shippingLookup = this.shippingFor(db, formatCode, qty);
+    const shippingFee = shippingLookup.fee_chf;
+    const shippingRow = shippingLookup.row;
+
+    const totalHT = beforeExpress + expressAmount + shippingFee;
     const vat = totalHT * 0.081;
     const totalTTC = totalHT + vat;
     const unitEffective = totalHT / qty;
@@ -66,6 +98,7 @@ window.Pricing = {
       afterDiscount,
       beforeExpress,
       expressAmount,
+      shippingFee, shippingRow,
       totalHT, vat, totalTTC, unitEffective,
     };
   },

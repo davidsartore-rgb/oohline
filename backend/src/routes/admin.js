@@ -91,6 +91,7 @@ async function applyFullConfig(db, actor, ip) {
     if (db.express_surcharge_pct !== undefined) settingUpdates.express_surcharge_pct = Number(db.express_surcharge_pct);
     if (db.contact_email !== undefined) settingUpdates.contact_email = db.contact_email;
     if (db.cookies_banner_enabled !== undefined) settingUpdates.cookies_banner_enabled = db.cookies_banner_enabled;
+    if (db.shipping !== undefined) settingUpdates.shipping = db.shipping;
     for (const [key, value] of Object.entries(settingUpdates)) {
       await tx.setting.upsert({ where: { key }, update: { value }, create: { key, value } });
     }

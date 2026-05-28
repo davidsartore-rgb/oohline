@@ -3,6 +3,30 @@
 // Server-side pricing engine — mirrors src/pricing.js from the frontend.
 // Input: raw DB rows from Prisma. Output: same shape as the frontend Pricing.compute().
 
+function shippingFor(shipping, formatCode, qty) {
+  const def = (shipping && typeof shipping.default_chf === 'number') ? shipping.default_chf : 25;
+  const overrides = (shipping && Array.isArray(shipping.overrides)) ? shipping.overrides : [];
+  const q = Math.max(1, parseInt(qty, 10) || 1);
+
+  const matching = overrides.filter((o) => {
+    const fmtOk = !Array.isArray(o.formats) || o.formats.length === 0 || o.formats.includes(formatCode);
+    const qtyOk = (parseInt(o.from_qty, 10) || 1) <= q;
+    return fmtOk && qtyOk;
+  });
+  if (matching.length === 0) return { fee_chf: def, row: null };
+
+  matching.sort((a, b) => {
+    const qa = parseInt(a.from_qty, 10) || 1;
+    const qb = parseInt(b.from_qty, 10) || 1;
+    if (qa !== qb) return qb - qa;
+    const sa = (Array.isArray(a.formats) && a.formats.length > 0) ? 1 : 0;
+    const sb = (Array.isArray(b.formats) && b.formats.length > 0) ? 1 : 0;
+    return sb - sa;
+  });
+  const row = matching[0];
+  return { fee_chf: typeof row.fee_chf === 'number' ? row.fee_chf : def, row };
+}
+
 function paperForFormat(papers, formatPapers, formatCode) {
   // formatPapers is the FormatPaper join table; papers is the Paper records.
   // Find papers assigned to this format, lowest priority wins.
@@ -13,7 +37,7 @@ function paperForFormat(papers, formatPapers, formatCode) {
   return papers.find(p => p.id === assigned[0].paper_id) || papers[0] || null;
 }
 
-function compute({ formats, papers, formatPapers, tiers, subjects, settings }, {
+function compute({ formats, papers, formatPapers, tiers, subjects, settings, shipping }, {
   formatCode, quantity, numSubjects, express,
 }) {
   const fmt = formats.find(f => f.code === formatCode);
@@ -50,7 +74,12 @@ function compute({ formats, papers, formatPapers, tiers, subjects, settings }, {
   const afterDiscount = subtotal - discountAmount;
   const beforeExpress = afterDiscount + subjectFee;
   const expressAmount = beforeExpress * expressPct;
-  const totalHT = beforeExpress + expressAmount;
+
+  const shippingLookup = shippingFor(shipping, formatCode, qty);
+  const shippingFee = shippingLookup.fee_chf;
+  const shippingRow = shippingLookup.row;
+
+  const totalHT = beforeExpress + expressAmount + shippingFee;
   const vat = totalHT * vatRate;
   const totalTTC = totalHT + vat;
   const unitEffective = totalHT / qty;
@@ -63,6 +92,7 @@ function compute({ formats, papers, formatPapers, tiers, subjects, settings }, {
     tier, subjRow,
     subjectFee,
     subtotal, discountAmount, afterDiscount, beforeExpress, expressAmount,
+    shippingFee, shippingRow,
     totalHT, vat, totalTTC, unitEffective,
   };
 }
@@ -74,4 +104,4 @@ function fmtCHF(n) {
   }).format(n);
 }
 
-module.exports = { compute, paperForFormat, fmtCHF };
+module.exports = { compute, paperForFormat, shippingFor, fmtCHF };

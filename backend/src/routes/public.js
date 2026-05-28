@@ -29,6 +29,7 @@ async function loadCatalogData({ adminMode = false } = {}) {
   const expressePct = Number(settingsMap.express_surcharge_pct ?? 22);
   const contactEmail = settingsMap.contact_email ?? process.env.CONTACT_EMAIL;
   const cookiesBannerEnabled = settingsMap.cookies_banner_enabled !== false;
+  const shippingConfig = settingsMap.shipping ?? { default_chf: 25, overrides: [] };
 
   // Shape papers with formats array (for frontend compatibility)
   const papersWithFormats = papers.map(p => ({
@@ -91,6 +92,7 @@ async function loadCatalogData({ adminMode = false } = {}) {
     tiers: tiers.map(t => ({ from: t.from_quantity, discount: Number(t.discount_pct) })),
     subjects: subjects.map(s => ({ count: s.count, fee_chf: Number(s.fee_chf) })),
     express_surcharge_pct: expressePct,
+    shipping: shippingConfig,
     contact_email: contactEmail,
     cookies_banner_enabled: cookiesBannerEnabled,
     page_texts: pageTextsMap,
@@ -183,6 +185,8 @@ module.exports = async function publicRoutes(fastify) {
       prisma.subjectFee.findMany(),
       prisma.setting.findMany(),
     ]);
+    const shippingRow = settings.find(s => s.key === 'shipping');
+    const shipping = shippingRow ? shippingRow.value : null;
 
     const fmt = formats.find(f => f.code === body.formatCode);
     if (!fmt) {
@@ -190,7 +194,7 @@ module.exports = async function publicRoutes(fastify) {
     }
 
     const result = compute(
-      { formats, papers, formatPapers, tiers, subjects, settings },
+      { formats, papers, formatPapers, tiers, subjects, settings, shipping },
       { formatCode: body.formatCode, quantity: body.quantity, numSubjects: body.subjects, express: body.express }
     );
 
