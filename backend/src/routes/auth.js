@@ -59,7 +59,7 @@ module.exports = async function authRoutes(fastify) {
     }
 
     const user = await prisma.adminUser.findFirst({
-      where: { username: { equals: String(username), mode: 'insensitive' } },
+      where: { username: String(username) },
     });
 
     const ip = req.ip;
