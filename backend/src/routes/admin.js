@@ -12,7 +12,12 @@ const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, 
 // ── Atomic DB update from a full config object ────────────────────────────────
 async function applyFullConfig(db, actor, ip) {
   await prisma.$transaction(async (tx) => {
-    // Sections
+    // Clear FK-dependent tables first to avoid constraint violations:
+    // format_papers → formats → sections (cascade order)
+    await tx.formatPaper.deleteMany();
+    await tx.format.deleteMany();
+
+    // Sections (formats already deleted, no FK violation)
     if (Array.isArray(db.sections)) {
       await tx.section.deleteMany();
       for (const s of db.sections) {
@@ -27,10 +32,8 @@ async function applyFullConfig(db, actor, ip) {
       }
     }
 
-    // Formats
+    // Formats (insert after sections exist)
     if (Array.isArray(db.formats)) {
-      await tx.formatPaper.deleteMany();
-      await tx.format.deleteMany();
       for (let i = 0; i < db.formats.length; i++) {
         const f = db.formats[i];
         await tx.format.create({
@@ -47,9 +50,8 @@ async function applyFullConfig(db, actor, ip) {
       }
     }
 
-    // Papers + FormatPapers
+    // Papers + FormatPapers (format_papers already cleared above)
     if (Array.isArray(db.papers)) {
-      await tx.formatPaper.deleteMany();
       await tx.paper.deleteMany();
       for (let i = 0; i < db.papers.length; i++) {
         const p = db.papers[i];
