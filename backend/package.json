@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
+    "postinstall": "npx prisma generate",
     "db:generate": "npx prisma generate",
     "db:migrate": "npx prisma migrate deploy",
     "db:seed": "node prisma/seed.js",
@@ -19,7 +20,9 @@
     "@fastify/multipart": "^8.3.0",
     "@fastify/rate-limit": "^9.1.0",
     "@fastify/static": "^7.0.4",
+    "@prisma/adapter-mysql": "^5.14.0",
     "@prisma/client": "^5.14.0",
+    "mysql2": "^3.9.0",
     "argon2": "^0.31.2",
     "dotenv": "^16.4.5",
     "fastify": "^4.27.0",
