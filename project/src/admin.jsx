@@ -80,11 +80,19 @@ function AdminPage({ db, setDb, lang, onSaved }) {
     { id: "account", label: "Compte" },
   ];
 
-  const update = (patch) => {
+  const [saveError, setSaveError] = useState(null);
+
+  const update = async (patch) => {
     const next = { ...db, ...patch };
     setDb(next);
-    DB.save(next);
-    onSaved && onSaved();
+    try {
+      await DB.save(next);
+      setSaveError(null);
+      onSaved && onSaved();
+    } catch (err) {
+      console.error("[Admin] Save failed:", err);
+      setSaveError(err.message);
+    }
   };
 
   const resetAll = () => {
@@ -97,6 +105,12 @@ function AdminPage({ db, setDb, lang, onSaved }) {
 
   return (
     <div className="page">
+      {saveError && (
+        <div style={{ background: "#fee2e2", color: "#991b1b", padding: "10px 16px", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>⚠️ Erreur de sauvegarde : {saveError}</span>
+          <button onClick={() => setSaveError(null)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}>✕</button>
+        </div>
+      )}
       <div className="page-head">
         <div className="breadcrumb">
           {(() => {

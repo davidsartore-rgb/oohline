@@ -80,19 +80,25 @@ window.DB = {
     }
   },
 
-  // Save — writes to localStorage and syncs to API (fire-and-forget)
+  // Save — writes to localStorage and syncs to API
+  // Returns a Promise that resolves on success and rejects on API error.
   save(db) {
     this._cache = db;
     localStorage.setItem(DB_KEY, JSON.stringify(db));
-    // Sync to API if admin is logged in
     if (window.Auth && window.Auth.isLoggedIn && window.Auth.isLoggedIn()) {
-      fetch("/api/admin/config", {
+      return fetch("/api/admin/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(db),
         credentials: "include",
-      }).catch(err => console.warn("[DB] API sync failed:", err.message));
+      }).then(async r => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body?.error?.message || `Erreur HTTP ${r.status}`);
+        }
+      });
     }
+    return Promise.resolve();
   },
 
   reset() {
