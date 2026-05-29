@@ -6,9 +6,6 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "postinstall": "npx prisma generate",
-    "db:generate": "npx prisma generate",
-    "db:migrate": "npx prisma migrate deploy",
     "db:seed": "node prisma/seed.js",
     "db:push": "npx prisma db push",
     "db:studio": "npx prisma studio"
@@ -24,6 +21,7 @@
     "argon2": "^0.31.2",
     "dotenv": "^16.4.5",
     "fastify": "^4.27.0",
+    "mysql2": "^3.9.0",
     "nodemailer": "^6.9.13",
     "pino": "^9.2.0",
     "pino-pretty": "^11.0.0",
